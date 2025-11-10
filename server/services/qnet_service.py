@@ -4,6 +4,7 @@ Handles all Q-Net API requests
 """
 
 import httpx
+import asyncio
 from typing import Dict, Any
 from urllib.parse import urlencode
 from fastapi import HTTPException
@@ -11,41 +12,89 @@ from fastapi import HTTPException
 from config.settings import QNET_SERVICE_KEY
 
 
-async def make_qnet_request(base_url: str, endpoint: str, params: Dict[str, Any]) -> tuple:
+async def make_qnet_request(base_url: str, endpoint: str, params: Dict[str, Any], max_retries: int = 3) -> tuple:
     """
-    Make HTTP request to Q-Net API
+    Make HTTP request to Q-Net API with retry logic
 
     Args:
         base_url: Base URL of the Q-Net API
         endpoint: API endpoint
         params: Query parameters
+        max_retries: Maximum number of retry attempts
 
     Returns:
         Tuple of (status_code, response_text)
     """
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        # Build query params like Node.js URLSearchParams
-        query_params = {
-            "serviceKey": QNET_SERVICE_KEY,
-            **params
-        }
+    # Build query params like Node.js URLSearchParams
+    query_params = {
+        "serviceKey": QNET_SERVICE_KEY,
+        **params
+    }
 
-        # Build query string using urlencode
-        query_string = urlencode(query_params)
-        url = f"{base_url}/{endpoint}?{query_string}"
+    # Build query string using urlencode
+    query_string = urlencode(query_params)
+    url = f"{base_url}/{endpoint}?{query_string}"
 
-        print(f"🔗 Requesting Q-Net API: {url}")
+    print(f"🔗 Requesting Q-Net API: {url}")
 
+    last_error = None
+
+    for attempt in range(max_retries):
         try:
-            response = await client.get(url)
-            print(f"✅ Q-Net API Response: status={response.status_code}, length={len(response.text)}")
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                response = await client.get(url)
+                print(f"✅ Q-Net API Response (attempt {attempt + 1}): status={response.status_code}, length={len(response.text)}")
 
-            # Check for API errors in XML
-            if "resultCode" in response.text:
-                if "<resultCode>99</resultCode>" in response.text or "<resultCode>00</resultCode>" not in response.text:
-                    print(f"⚠️ Response preview: {response.text[:500]}")
+                # Check for API errors in XML
+                if "resultCode" in response.text:
+                    if "<resultCode>99</resultCode>" in response.text:
+                        error_msg = "Q-Net API returned error code 99"
+                        if "resultMsg" in response.text:
+                            import re
+                            msg_match = re.search(r'<resultMsg>(.*?)</resultMsg>', response.text)
+                            if msg_match:
+                                error_msg = f"Q-Net API Error: {msg_match.group(1)}"
+                        print(f"⚠️ {error_msg}")
+                        print(f"⚠️ Response preview: {response.text[:500]}")
 
-            return response.status_code, response.text
+                        # Retry for error code 99
+                        if attempt < max_retries - 1:
+                            wait_time = (attempt + 1) * 2  # Exponential backoff
+                            print(f"🔄 Retrying in {wait_time} seconds...")
+                            await asyncio.sleep(wait_time)
+                            continue
+                        else:
+                            raise HTTPException(status_code=503, detail=error_msg)
+
+                return response.status_code, response.text
+
+        except httpx.TimeoutException as e:
+            last_error = f"Request timeout: {str(e)}"
+            print(f"❌ Timeout Error (attempt {attempt + 1}/{max_retries}): {last_error}")
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2
+                print(f"🔄 Retrying in {wait_time} seconds...")
+                await asyncio.sleep(wait_time)
+            continue
+
+        except httpx.RequestError as e:
+            last_error = f"Request error: {str(e)}"
+            print(f"❌ Request Error (attempt {attempt + 1}/{max_retries}): {last_error}")
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2
+                print(f"🔄 Retrying in {wait_time} seconds...")
+                await asyncio.sleep(wait_time)
+            continue
+
         except Exception as e:
-            print(f"❌ Q-Net API Error: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            last_error = f"Unexpected error: {str(e)}"
+            print(f"❌ Unexpected Error (attempt {attempt + 1}/{max_retries}): {last_error}")
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2
+                print(f"🔄 Retrying in {wait_time} seconds...")
+                await asyncio.sleep(wait_time)
+            continue
+
+    # All retries failed
+    print(f"❌ All {max_retries} attempts failed. Last error: {last_error}")
+    raise HTTPException(status_code=500, detail=last_error or "Q-Net API request failed after multiple retries")
