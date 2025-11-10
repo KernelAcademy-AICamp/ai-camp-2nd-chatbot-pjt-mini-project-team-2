@@ -1,22 +1,20 @@
-# !pip install PyMuPDF
-# !pip install pyngrok
-# !pip install fastapi uvicorn nest_asyncio pyngrok PyMuPDF > /dev/null
-
+# main.py
 import os
-import nest_asyncio
-import uvicorn
 import random
 import fitz  # PyMuPDF
 import re
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pyngrok import ngrok
+import nest_asyncio
+import uvicorn
 
 # ============================================
 # ⚙️ FastAPI 앱 초기화
 # ============================================
 app = FastAPI(title="멀티에이전트 문제 생성 서버")
 
+# ✅ CORS 설정 (React 접근 허용)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # 개발용 - 모든 출처 허용
@@ -75,22 +73,28 @@ async def upload_pdf(file: UploadFile = File(...)):
 
     return {"status": "success", "questions": quizzes}
 
+# ============================================
+# 🧠 루트 엔드포인트
+# ============================================
 @app.get("/")
 def root():
     return {"message": "멀티에이전트 서버 정상 작동 중 🚀"}
 
 # ============================================
-# 🌍 ngrok 연결 및 FastAPI 실행
+# 🚀 메인 실행부
 # ============================================
-ngrok.set_auth_token("3594V0xG8PgXKGAGW4fxS4V6RzR_3oWjxFrJ6WMaW2jwysG44")
-public_url = ngrok.connect(8000)
-print("🌍 외부 접속 URL:", public_url.public_url)
+if __name__ == "__main__":
+    import nest_asyncio
 
-# ✅ 비동기 루프 활성화 (Colab 환경)
-nest_asyncio.apply()
+    # ngrok 토큰 등록
+    ngrok.set_auth_token("3594V0xG8PgXKGAGW4fxS4V6RzR_3oWjxFrJ6WMaW2jwysG44")
 
-# ✅ Colab에서 비동기 서버 실행
-config = uvicorn.Config(app=app, host="0.0.0.0", port=8000)
-server = uvicorn.Server(config)
+    # ngrok 포트 연결 (8000)
+    public_url = ngrok.connect(8000)
+    print("🌍 외부 접속 URL:", public_url.public_url)
 
-await server.serve()
+    # Colab 환경이 아니더라도 nest_asyncio 적용 가능
+    nest_asyncio.apply()
+
+    # FastAPI 실행
+    uvicorn.run(app, host="0.0.0.0", port=8000)
