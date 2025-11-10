@@ -1,7 +1,10 @@
 .navigation {
-  background-color: #2c3e50;
+  background: transparent;
+  backdrop-filter: blur(20px);
   padding: 1rem 0;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  border: none;
+  z-index: 10;
+  position: relative;
 }
 
 .nav-container {
@@ -14,14 +17,18 @@
 }
 
 .nav-brand {
-  color: white;
-  font-size: 1.5rem;
-  font-weight: bold;
+  font-size: 1.8rem;
+  font-weight: 700;
   text-decoration: none;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  transition: transform 0.3s ease;
 }
 
 .nav-brand:hover {
-  color: #3498db;
+  transform: scale(1.05);
 }
 
 .nav-menu {
@@ -29,7 +36,7 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  gap: 2rem;
+  gap: 1.5rem;
 }
 
 .nav-item {
@@ -37,13 +44,19 @@
 }
 
 .nav-link {
-  color: white;
+  color: #2c3e50;
   text-decoration: none;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  transition: background-color 0.3s;
+  padding: 0.5rem 1.25rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(10px);
 }
 
 .nav-link:hover {
-  background-color: #34495e;
+  background: rgba(139, 92, 246, 0.2);
+  color: #8b5cf6;
+  transform: translateY(-2px);
 }

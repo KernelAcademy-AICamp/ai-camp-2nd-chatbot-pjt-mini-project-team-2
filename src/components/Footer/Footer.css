@@ -1,8 +1,12 @@
 .footer {
-  background-color: #2c3e50;
-  color: white;
+  background: transparent;
+  backdrop-filter: blur(20px);
+  color: #2c3e50;
   padding: 2rem 0;
   margin-top: auto;
+  border: none;
+  z-index: 10;
+  position: relative;
 }
 
 .footer-container {
@@ -14,6 +18,7 @@
 
 .footer-container p {
   margin: 0 0 1rem 0;
+  font-weight: 500;
 }
 
 .footer-links {
@@ -23,11 +28,13 @@
 }
 
 .footer-links a {
-  color: #95a5a6;
+  color: #6b7280;
   text-decoration: none;
-  transition: color 0.3s;
+  transition: all 0.3s;
+  font-weight: 500;
 }
 
 .footer-links a:hover {
-  color: #3498db;
+  color: #8b5cf6;
+  transform: scale(1.05);
 }
