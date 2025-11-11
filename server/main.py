@@ -14,7 +14,7 @@ from routes.rag_routes import router as rag_router
 from routes.pdfupload_routes import router as quiz_router
 
 # Initialize FastAPI app
-app = FastAPI(title="Study Helper API")
+app = FastAPI(title="Q-Pass API")
 
 # CORS Configuration
 app.add_middleware(
@@ -52,7 +52,7 @@ if __name__ == "__main__":
 
     print("""
 ╔════════════════════════════════════════════════════════╗
-║         Study Helper API Server Running                ║
+║            Q-Pass API Server Running                   ║
 ╚════════════════════════════════════════════════════════╝
 
   Port: 3001

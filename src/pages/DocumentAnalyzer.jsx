@@ -288,10 +288,10 @@ function DocumentAnalyzer() {
     // 사용자 답변 처리
     let userAnswer = answerText.trim();
 
-    // 숫자 입력인 경우 (1, 2, 3, 4) 해당 선택지로 변환
-    const numberMatch = userAnswer.match(/^[1-4]$/);
+    // 숫자 입력인 경우 (1, 2, 3, 4 또는 1번, 2번, 3번, 4번) 해당 선택지로 변환
+    const numberMatch = userAnswer.match(/^([1-4])번?$/);
     if (numberMatch && options.length > 0) {
-      const optionIndex = parseInt(userAnswer) - 1;
+      const optionIndex = parseInt(numberMatch[1]) - 1;
       if (optionIndex >= 0 && optionIndex < options.length) {
         userAnswer = options[optionIndex];
       }

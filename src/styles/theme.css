@@ -73,9 +73,10 @@
   --shadow-cyan-hover: 0 4px 12px rgba(6, 182, 212, 0.3);
 
   /* Typography */
-  --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-  --font-family-mono: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+  --font-family-base: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
+    'Malgun Gothic', 'Segoe UI', 'Noto Sans KR', 'Roboto', sans-serif;
+  --font-family-mono: 'D2Coding', 'Fira Code', source-code-pro, Menlo, Monaco, Consolas,
+    'Courier New', monospace;
 
   --font-size-xs: 11px;
   --font-size-sm: 12px;

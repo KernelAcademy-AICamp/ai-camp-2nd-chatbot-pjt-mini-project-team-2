@@ -126,7 +126,7 @@ function Home() {
   return (
     <div className="home-container">
       <div className="home-content">
-        <h1 className="site-title">Study Helper</h1>
+        <h1 className="site-title">Q-Pass</h1>
         <p className="site-subtitle">국가기술자격 시험 준비를 도와드립니다</p>
 
         {/* PDF 업로드 섹션 */}

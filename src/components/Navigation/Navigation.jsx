@@ -7,7 +7,7 @@ function Navigation() {
     <nav className="navigation">
       <div className="nav-container">
         <Link to="/" className="nav-brand">
-          Study Helper
+          Q-Pass
         </Link>
         <ul className="nav-menu">
           <li className="nav-item">

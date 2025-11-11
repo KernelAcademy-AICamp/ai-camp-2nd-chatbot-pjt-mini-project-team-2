@@ -1,5 +1,5 @@
 """
-Configuration settings for the Study Helper API
+Configuration settings for the Q-Pass API
 """
 
 import os
