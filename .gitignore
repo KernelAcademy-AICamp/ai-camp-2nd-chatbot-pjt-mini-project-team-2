@@ -26,3 +26,6 @@ yarn-error.log*
 
 # Claude Code settings
 .claude/
+
+# Uploaded files
+server/uploads/

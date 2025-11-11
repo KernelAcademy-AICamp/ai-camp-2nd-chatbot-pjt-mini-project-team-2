@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getQualificationList } from '../services/qnetApi';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import './StudyPlan.css';
 
 function StudyPlan() {
@@ -317,9 +320,6 @@ function StudyPlan() {
   // 날짜 선택 핸들러
   const handleDateSelect = (date) => {
     setStartDate(date);
-    if (date) {
-      setActiveTab(4); // 4단계 탭으로 이동
-    }
   };
 
   return (
@@ -328,60 +328,94 @@ function StudyPlan() {
       <p>응시하고 싶은 종목을 선택하면 AI가 맞춤 학습 계획을 생성해드립니다</p>
 
       <div className="study-plan-container">
-        {/* 탭 네비게이션 */}
-        <div className="tab-navigation">
-          <div
-            className={`tab-item ${activeTab === 1 ? 'active' : ''} ${selectedSubject ? 'completed' : ''}`}
-            onClick={() => setActiveTab(1)}
-          >
-            <div className="tab-number">1</div>
-            <div className="tab-label">종목 선택</div>
-          </div>
-          <div className="tab-divider"></div>
-          <div
-            className={`tab-item ${activeTab === 2 ? 'active' : ''} ${selectedSchedule ? 'completed' : ''} ${!selectedSubject ? 'disabled' : ''}`}
-            onClick={() => selectedSubject && setActiveTab(2)}
-          >
-            <div className="tab-number">2</div>
-            <div className="tab-label">시험 일정</div>
-          </div>
-          <div className="tab-divider"></div>
-          <div
-            className={`tab-item ${activeTab === 3 ? 'active' : ''} ${startDate ? 'completed' : ''} ${!selectedSchedule ? 'disabled' : ''}`}
-            onClick={() => selectedSchedule && setActiveTab(3)}
-          >
-            <div className="tab-number">3</div>
-            <div className="tab-label">시작 날짜</div>
-          </div>
-          <div className="tab-divider"></div>
-          <div
-            className={`tab-item ${activeTab === 4 ? 'active' : ''} ${studyPlan ? 'completed' : ''} ${!startDate ? 'disabled' : ''}`}
-            onClick={() => startDate && setActiveTab(4)}
-          >
-            <div className="tab-number">4</div>
-            <div className="tab-label">학습 계획 생성</div>
-          </div>
-        </div>
-
-        {/* 선택된 종목 표시 (모든 탭에서 보이도록) */}
-        {selectedSubject && (
-          <div className="selected-subject-banner">
-            <div className="banner-content">
-              <div className="banner-icon">✅</div>
-              <div className="banner-text">
-                <p className="banner-label">선택된 종목</p>
-                <p className="banner-title">{selectedSubject.name}</p>
-                <p className="banner-code">종목코드: {selectedSubject.code}</p>
-              </div>
-            </div>
-            <button
-              className="change-subject-button"
-              onClick={handleReset}
+        {/* 탭 네비게이션과 선택 내역 */}
+        <div className="navigation-with-summary">
+          {/* 탭 네비게이션 */}
+          <div className="tab-navigation">
+            <div
+              className={`tab-item ${activeTab === 1 ? 'active' : ''} ${selectedSubject ? 'completed' : ''}`}
+              onClick={() => setActiveTab(1)}
             >
-              🔄 종목 다시 선택
-            </button>
+              <div className="tab-number">1</div>
+              <div className="tab-label">종목 선택</div>
+            </div>
+            <div className="tab-divider"></div>
+            <div
+              className={`tab-item ${activeTab === 2 ? 'active' : ''} ${selectedSchedule ? 'completed' : ''} ${!selectedSubject ? 'disabled' : ''}`}
+              onClick={() => selectedSubject && setActiveTab(2)}
+            >
+              <div className="tab-number">2</div>
+              <div className="tab-label">시험 일정</div>
+            </div>
+            <div className="tab-divider"></div>
+            <div
+              className={`tab-item ${activeTab === 3 ? 'active' : ''} ${startDate ? 'completed' : ''} ${!selectedSchedule ? 'disabled' : ''}`}
+              onClick={() => selectedSchedule && setActiveTab(3)}
+            >
+              <div className="tab-number">3</div>
+              <div className="tab-label">시작 날짜</div>
+            </div>
+            <div className="tab-divider"></div>
+            <div
+              className={`tab-item ${activeTab === 4 ? 'active' : ''} ${studyPlan ? 'completed' : ''} ${!startDate ? 'disabled' : ''}`}
+              onClick={() => startDate && setActiveTab(4)}
+            >
+              <div className="tab-number">4</div>
+              <div className="tab-label">학습 계획 생성</div>
+            </div>
           </div>
-        )}
+
+          {/* 선택 내역 요약 (종목 선택 후 표시) */}
+          {selectedSubject && (
+            <div className="selection-summary-right">
+              <h3>📋 선택 내역</h3>
+              <div className="summary-items">
+                <div className="summary-item">
+                  <span className="summary-label">선택한 종목:</span>
+                  <span className="summary-value">{selectedSubject.name}</span>
+                </div>
+                {selectedSchedule && (
+                  <>
+                    <div className="summary-item">
+                      <span className="summary-label">선택한 시험 일정:</span>
+                      <span className="summary-value">{selectedSchedule.description}</span>
+                    </div>
+                    {selectedSchedule.docExamDt && (
+                      <div className="summary-item detail">
+                        <span className="summary-label">📖 필기시험일:</span>
+                        <span className="summary-value">{formatDate(selectedSchedule.docExamDt)}</span>
+                      </div>
+                    )}
+                    {selectedSchedule.pracExamStartDt && (
+                      <div className="summary-item detail">
+                        <span className="summary-label">🔧 실기시험일:</span>
+                        <span className="summary-value">{formatDate(selectedSchedule.pracExamStartDt)}</span>
+                      </div>
+                    )}
+                  </>
+                )}
+                {startDate && (
+                  <div className="summary-item">
+                    <span className="summary-label">공부 시작 날짜:</span>
+                    <span className="summary-value">{new Date(startDate).toLocaleDateString('ko-KR', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                      weekday: 'long'
+                    })}</span>
+                  </div>
+                )}
+              </div>
+              <button
+                className="change-subject-button"
+                onClick={handleReset}
+                style={{ marginTop: '1rem', width: '100%' }}
+              >
+                종목 변경
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* 탭 컨텐츠 영역 */}
         <div className="tab-content">
@@ -389,7 +423,7 @@ function StudyPlan() {
           {activeTab === 1 && (
             <div className="tab-panel">
               <div className="selection-section">
-                <h2>1단계: 종목 선택</h2>
+                <h2>종목 선택</h2>
 
                 {loadingQualifications ? (
                   <div className="loading-message">
@@ -424,7 +458,6 @@ function StudyPlan() {
                               className="subject-card"
                               onClick={() => handleSubjectSelect(item)}
                             >
-                              <div className="subject-code">[{jmCode}]</div>
                               <div className="subject-name">{jmName}</div>
                             </div>
                           );
@@ -531,7 +564,6 @@ function StudyPlan() {
                             >
                               <span className="list-icon">📄</span>
                               <span className="list-name">{jmName}</span>
-                              <span className="list-code">[{jmCode}]</span>
                             </div>
                           );
                         })}
@@ -550,18 +582,7 @@ function StudyPlan() {
           {activeTab === 2 && selectedSubject && (
             <div className="tab-panel">
               <div className="selection-section">
-                <h2>2단계: 시험 일정 선택</h2>
-
-                {/* 이전 단계 선택 내역 */}
-                <div className="selection-summary">
-                  <h3>📋 선택 내역</h3>
-                  <div className="summary-items">
-                    <div className="summary-item">
-                      <span className="summary-label">선택한 종목:</span>
-                      <span className="summary-value">{selectedSubject.name} ({selectedSubject.code})</span>
-                    </div>
-                  </div>
-                </div>
+                <h2>시험 일정 선택</h2>
 
                 {loadingSchedules ? (
                   <div className="loading-message">
@@ -621,34 +642,7 @@ function StudyPlan() {
           {activeTab === 3 && selectedSchedule && (
             <div className="tab-panel">
               <div className="selection-section">
-                <h2>3단계: 공부 시작 날짜 선택</h2>
-
-                {/* 이전 단계 선택 내역 */}
-                <div className="selection-summary">
-                  <h3>📋 선택 내역</h3>
-                  <div className="summary-items">
-                    <div className="summary-item">
-                      <span className="summary-label">선택한 종목:</span>
-                      <span className="summary-value">{selectedSubject.name} ({selectedSubject.code})</span>
-                    </div>
-                    <div className="summary-item">
-                      <span className="summary-label">선택한 시험 일정:</span>
-                      <span className="summary-value">{selectedSchedule.description}</span>
-                    </div>
-                    {selectedSchedule.docExamDt && (
-                      <div className="summary-item detail">
-                        <span className="summary-label">📖 필기시험일:</span>
-                        <span className="summary-value">{formatDate(selectedSchedule.docExamDt)}</span>
-                      </div>
-                    )}
-                    {selectedSchedule.pracExamStartDt && (
-                      <div className="summary-item detail">
-                        <span className="summary-label">🔧 실기시험일:</span>
-                        <span className="summary-value">{formatDate(selectedSchedule.pracExamStartDt)}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <h2>공부 시작 날짜 선택</h2>
 
                 <div className="date-picker-section">
                   <label htmlFor="start-date">공부를 시작할 날짜를 선택하세요:</label>
@@ -660,14 +654,22 @@ function StudyPlan() {
                 className="date-input"
               />
               {startDate && (
-                <p className="date-info">
-                  선택된 날짜: <strong>{new Date(startDate).toLocaleDateString('ko-KR', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                    weekday: 'long'
-                  })}</strong>
-                </p>
+                <>
+                  <p className="date-info">
+                    선택된 날짜: <strong>{new Date(startDate).toLocaleDateString('ko-KR', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                      weekday: 'long'
+                    })}</strong>
+                  </p>
+                  <button
+                    className="next-button"
+                    onClick={() => setActiveTab(4)}
+                  >
+                    다음 단계로 →
+                  </button>
+                </>
               )}
                 </div>
               </div>
@@ -678,43 +680,7 @@ function StudyPlan() {
           {activeTab === 4 && selectedSubject && selectedSchedule && startDate && (
             <div className="tab-panel">
               <div className="generate-section">
-                <h2>4단계: AI 학습 계획 생성</h2>
-
-                {/* 이전 단계 선택 내역 */}
-                <div className="selection-summary">
-                  <h3>📋 선택 내역 확인</h3>
-                  <div className="summary-items">
-                    <div className="summary-item">
-                      <span className="summary-label">선택한 종목:</span>
-                      <span className="summary-value">{selectedSubject.name} ({selectedSubject.code})</span>
-                    </div>
-                    <div className="summary-item">
-                      <span className="summary-label">선택한 시험 일정:</span>
-                      <span className="summary-value">{selectedSchedule.description}</span>
-                    </div>
-                    {selectedSchedule.docExamDt && (
-                      <div className="summary-item detail">
-                        <span className="summary-label">📖 필기시험일:</span>
-                        <span className="summary-value">{formatDate(selectedSchedule.docExamDt)}</span>
-                      </div>
-                    )}
-                    {selectedSchedule.pracExamStartDt && (
-                      <div className="summary-item detail">
-                        <span className="summary-label">🔧 실기시험일:</span>
-                        <span className="summary-value">{formatDate(selectedSchedule.pracExamStartDt)}</span>
-                      </div>
-                    )}
-                    <div className="summary-item">
-                      <span className="summary-label">공부 시작 날짜:</span>
-                      <span className="summary-value">{new Date(startDate).toLocaleDateString('ko-KR', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                        weekday: 'long'
-                      })}</span>
-                    </div>
-                  </div>
-                </div>
+                <h2>AI 학습 계획 생성</h2>
 
                 <button
                   className="generate-button"
@@ -739,10 +705,13 @@ function StudyPlan() {
                   <h2>✨ 맞춤 학습 계획</h2>
                   <div className="study-plan-content">
                     <h3>{studyPlan.subject}</h3>
-                    <div className="plan-text">
-                      {studyPlan.study_plan.split('\n').map((line, index) => (
-                        <p key={index}>{line}</p>
-                      ))}
+                    <div className="plan-text markdown-content">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeRaw]}
+                      >
+                        {studyPlan.study_plan}
+                      </ReactMarkdown>
                     </div>
                   </div>
                 </div>
