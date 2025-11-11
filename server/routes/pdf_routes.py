@@ -371,6 +371,51 @@ async def list_uploaded_files():
         )
 
 
+@router.delete("/delete-file/{file_name:path}")
+async def delete_single_file(file_name: str):
+    """
+    Gemini API에서 특정 파일 삭제
+
+    Args:
+    - file_name: 삭제할 파일의 name (예: files/abc123)
+
+    Returns:
+    - success: 성공 여부
+    - message: 메시지
+    """
+    try:
+        loader = get_pdf_loader()
+
+        # 파일 찾기
+        file_to_delete = None
+        for file in loader.uploaded_files:
+            if file.name == file_name:
+                file_to_delete = file
+                break
+
+        if file_to_delete is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"파일을 찾을 수 없습니다: {file_name}"
+            )
+
+        # 파일 삭제
+        loader.delete_file(file_to_delete)
+
+        return {
+            "success": True,
+            "message": f"파일이 삭제되었습니다: {file_to_delete.display_name}"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"파일 삭제 중 오류 발생: {str(e)}"
+        )
+
+
 @router.delete("/clear-files")
 async def clear_all_files():
     """

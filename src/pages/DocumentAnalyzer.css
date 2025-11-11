@@ -191,6 +191,12 @@
   background: rgba(255, 255, 255, 0.8);
   border-radius: 12px;
   border: 2px solid rgba(102, 126, 234, 0.2);
+  transition: all 0.3s ease;
+}
+
+.file-item:hover {
+  border-color: rgba(102, 126, 234, 0.4);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
 }
 
 .file-icon {
@@ -211,6 +217,31 @@
   font-size: 0.85rem;
   color: #7f8c8d;
   margin: 0.25rem 0 0 0;
+}
+
+.delete-file-btn {
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 68, 68, 0.1);
+  border: 2px solid rgba(255, 68, 68, 0.3);
+  border-radius: 8px;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.delete-file-btn:hover {
+  background: rgba(255, 68, 68, 0.2);
+  border-color: rgba(255, 68, 68, 0.6);
+  transform: scale(1.1);
+}
+
+.delete-file-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .no-files {
@@ -383,6 +414,87 @@
   color: #2c3e50;
 }
 
+/* 마크다운 스타일링 */
+.message-content p {
+  margin: 0.5rem 0;
+  line-height: 1.8;
+}
+
+.message-content p:first-child {
+  margin-top: 0;
+}
+
+.message-content p:last-child {
+  margin-bottom: 0;
+}
+
+.message-content ul {
+  margin: 0.75rem 0;
+  padding-left: 1.5rem;
+  list-style-type: disc;
+}
+
+.message-content li {
+  margin: 0.5rem 0;
+  line-height: 1.6;
+}
+
+.message-content strong {
+  font-weight: 700;
+  color: #667eea;
+}
+
+.message-content em {
+  font-style: italic;
+}
+
+.message-content code {
+  background: rgba(102, 126, 234, 0.1);
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+.message-content pre {
+  background: rgba(102, 126, 234, 0.1);
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+.message-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.message-content h1,
+.message-content h2,
+.message-content h3 {
+  margin: 1rem 0 0.5rem 0;
+  color: #667eea;
+  font-weight: 700;
+}
+
+.message-content h1 {
+  font-size: 1.5em;
+}
+
+.message-content h2 {
+  font-size: 1.3em;
+}
+
+.message-content h3 {
+  font-size: 1.1em;
+}
+
+.message-content br {
+  display: block;
+  content: "";
+  margin-top: 0.5rem;
+}
+
 .chat-input {
   display: flex;
   flex-direction: column;
@@ -513,6 +625,37 @@
   line-height: 1.6;
 }
 
+/* 퀴즈 마크다운 스타일링 */
+.question-text p,
+.option p,
+.answer-section span p {
+  margin: 0.3rem 0;
+  line-height: 1.6;
+}
+
+.question-text strong,
+.option strong,
+.answer-section span strong {
+  font-weight: 700;
+  color: #667eea;
+}
+
+.question-text em,
+.option em,
+.answer-section span em {
+  font-style: italic;
+}
+
+.question-text code,
+.option code,
+.answer-section span code {
+  background: rgba(102, 126, 234, 0.1);
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
 .options {
   display: flex;
   flex-direction: column;
@@ -525,6 +668,7 @@
   background: rgba(102, 126, 234, 0.05);
   border-radius: 8px;
   border: 2px solid rgba(102, 126, 234, 0.2);
+  line-height: 1.6;
 }
 
 .answer-section {
