@@ -11,7 +11,7 @@ load_dotenv()
 # Q-Net API Configuration
 QNET_TEST_INFO_API = "http://openapi.q-net.or.kr/api/service/rest/InquiryTestInformationNTQSVC"
 QNET_QUALIFICATION_API = "http://openapi.q-net.or.kr/api/service/rest/InquiryListNationalQualifcationSVC"
-QNET_SERVICE_KEY = "892a0f45b2c4a8b1b0c247d38df541b7d5d3ea40e069481b41424cdd1a77bc54"
+QNET_SERVICE_KEY = os.getenv("QNET_SERVICE_KEY")
 
 # OpenAI Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
