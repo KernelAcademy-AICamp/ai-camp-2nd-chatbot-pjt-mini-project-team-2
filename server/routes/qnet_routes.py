@@ -78,9 +78,21 @@ async def get_fee_list(jmCd: str = Query(..., description="종목코드 (필수)
 
 
 @router.get("/jm-list")
-async def get_jm_list(jmCd: str = Query(..., description="종목코드 (필수)")):
+async def get_jm_list(
+    jmCd: str = Query(..., description="종목코드 (필수)"),
+    implYy: Optional[str] = Query(None, description="시행년도 (기본: 현재년도)")
+):
     """종목별 시행일정 목록 조회"""
+    from datetime import datetime
+
     params = {"jmCd": jmCd}
+
+    # implYy가 없으면 현재 년도 사용
+    if implYy:
+        params["implYy"] = implYy
+    else:
+        params["implYy"] = str(datetime.now().year)
+
     status_code, data = await make_qnet_request(QNET_TEST_INFO_API, "getJMList", params)
     return Response(content=data, media_type="application/xml", status_code=status_code)
 

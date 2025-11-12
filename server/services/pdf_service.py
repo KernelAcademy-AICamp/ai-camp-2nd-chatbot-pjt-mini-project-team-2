@@ -5,11 +5,18 @@ Gemini API의 File API를 활용하여 PDF 파일을 업로드하고 처리합�
 
 import os
 import time
+import hashlib
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import google.generativeai as genai
 from google.generativeai.types import File
 from fastapi import HTTPException
+
+try:
+    from PyPDF2 import PdfReader
+    PYPDF2_AVAILABLE = True
+except ImportError:
+    PYPDF2_AVAILABLE = False
 
 from config.settings import GEMINI_API_KEY
 
@@ -34,14 +41,33 @@ class PDFLoader:
 
         genai.configure(api_key=self.api_key)
         self.uploaded_files: List[File] = []
+        self.file_cache: Dict[str, File] = {}  # 파일 해시 -> File 객체 캐시
 
-    def upload_pdf(self, file_path: str, display_name: Optional[str] = None) -> File:
+    def _get_file_hash(self, file_path: str) -> str:
         """
-        PDF 파일을 Gemini API에 업로드
+        파일의 MD5 해시값 계산
+
+        Args:
+            file_path: 파일 경로
+
+        Returns:
+            MD5 해시 문자열
+        """
+        hash_md5 = hashlib.md5()
+        with open(file_path, "rb") as f:
+            # 대용량 파일을 위해 청크 단위로 읽기
+            for chunk in iter(lambda: f.read(8192), b""):
+                hash_md5.update(chunk)
+        return hash_md5.hexdigest()
+
+    def upload_pdf(self, file_path: str, display_name: Optional[str] = None, use_cache: bool = True) -> File:
+        """
+        PDF 파일을 Gemini API에 업로드 (캐싱 지원)
 
         Args:
             file_path: 업로드할 PDF 파일 경로
             display_name: 파일의 표시 이름 (선택사항)
+            use_cache: 캐시 사용 여부 (기본: True)
 
         Returns:
             업로드된 File 객체
@@ -57,6 +83,21 @@ class PDFLoader:
         # PDF 파일 확인
         if not file_path.lower().endswith('.pdf'):
             raise ValueError("PDF 파일만 업로드 가능합니다.")
+
+        # 캐시 확인
+        if use_cache:
+            file_hash = self._get_file_hash(file_path)
+            if file_hash in self.file_cache:
+                cached_file = self.file_cache[file_hash]
+                # 캐시된 파일이 여전히 유효한지 확인
+                try:
+                    file_status = genai.get_file(cached_file.name)
+                    if file_status.state.name == "ACTIVE":
+                        print(f"♻️ 캐시된 파일 사용: {cached_file.display_name}")
+                        return cached_file
+                except:
+                    # 캐시된 파일이 무효화된 경우 제거
+                    del self.file_cache[file_hash]
 
         # 표시 이름 설정
         if display_name is None:
@@ -77,11 +118,15 @@ class PDFLoader:
         # 업로드된 파일 목록에 추가
         self.uploaded_files.append(uploaded_file)
 
+        # 캐시에 저장
+        if use_cache:
+            self.file_cache[file_hash] = uploaded_file
+
         return uploaded_file
 
     def wait_for_file_processing(self, uploaded_file: File, timeout: int = 300) -> File:
         """
-        파일 처리가 완료될 때까지 대기
+        파일 처리가 완료될 때까지 대기 (Exponential Backoff 적용)
 
         Args:
             uploaded_file: 업로드된 File 객체
@@ -97,6 +142,7 @@ class PDFLoader:
         print(f"⏳ 파일 처리 대기 중: {uploaded_file.display_name}")
 
         start_time = time.time()
+        wait_time = 0.5  # 초기 대기 시간을 0.5초로 단축
 
         while True:
             # 파일 상태 확인
@@ -104,7 +150,8 @@ class PDFLoader:
 
             # 처리 완료
             if file_status.state.name == "ACTIVE":
-                print(f"✅ 파일 처리 완료: {file_status.display_name}")
+                elapsed = time.time() - start_time
+                print(f"✅ 파일 처리 완료: {file_status.display_name} ({elapsed:.1f}초)")
                 return file_status
 
             # 처리 실패
@@ -118,8 +165,9 @@ class PDFLoader:
                     f"파일 처리 시간 초과 ({timeout}초): {uploaded_file.display_name}"
                 )
 
-            # 대기
-            time.sleep(2)
+            # Exponential backoff으로 대기 (최대 3초)
+            time.sleep(wait_time)
+            wait_time = min(wait_time * 1.5, 3.0)
             print(f"   처리 중... (경과 시간: {int(elapsed_time)}초)")
 
     def upload_multiple_pdfs(self, file_paths: List[str]) -> List[File]:
@@ -198,22 +246,67 @@ class PDFLoader:
         for file in self.uploaded_files[:]:  # 복사본으로 순회
             self.delete_file(file)
 
-    def extract_full_text(self, file: File, model_name: str = "gemini-2.5-flash") -> str:
+    def extract_text_with_pypdf2(self, file_path: str) -> Tuple[bool, str]:
         """
-        PDF 파일의 전체 텍스트 추출 (텍스트 기반 + 이미지 기반 PDF 모두 지원)
-
-        이 메서드는 Gemini의 멀티모달 기능을 활용하여:
-        - 일반 텍스트 PDF: 텍스트 직접 추출
-        - 스캔/이미지 PDF: OCR을 통한 텍스트 인식
-        - 표, 그래프 등: 구조 유지하며 텍스트화
+        PyPDF2를 사용한 빠른 텍스트 추출 (텍스트 기반 PDF에 적합)
 
         Args:
-            file: File 객체
-            model_name: 사용할 Gemini 모델 (기본: gemini-1.5-flash)
+            file_path: PDF 파일 경로
+
+        Returns:
+            (성공 여부, 추출된 텍스트) 튜플
+        """
+        if not PYPDF2_AVAILABLE:
+            return False, ""
+
+        try:
+            reader = PdfReader(file_path)
+            text_parts = []
+
+            for page_num, page in enumerate(reader.pages, 1):
+                text = page.extract_text()
+                if text.strip():
+                    text_parts.append(f"=== 페이지 {page_num} ===\n{text}\n")
+
+            full_text = "\n".join(text_parts)
+
+            # 충분한 텍스트가 추출되었는지 확인 (최소 100자)
+            if len(full_text.strip()) > 100:
+                print(f"⚡ PyPDF2로 빠른 텍스트 추출 완료 ({len(full_text)} 문자)")
+                return True, full_text
+            else:
+                print(f"⚠️ PyPDF2 추출 결과 부족 ({len(full_text)} 문자), Gemini로 전환")
+                return False, ""
+
+        except Exception as e:
+            print(f"⚠️ PyPDF2 추출 실패: {str(e)}, Gemini로 전환")
+            return False, ""
+
+    def extract_full_text(self, file: File, model_name: str = "gemini-2.5-flash", file_path: Optional[str] = None, use_fast_extraction: bool = True) -> str:
+        """
+        PDF 파일의 전체 텍스트 추출 (하이브리드 방식)
+
+        이 메서드는 성능 최적화를 위해:
+        1. 먼저 PyPDF2로 빠른 추출 시도 (텍스트 기반 PDF)
+        2. 실패 시 Gemini의 멀티모달 기능 활용 (스캔/이미지 PDF, OCR 필요)
+
+        Args:
+            file: Gemini File 객체
+            model_name: 사용할 Gemini 모델 (기본: gemini-2.5-flash)
+            file_path: 로컬 파일 경로 (PyPDF2 사용을 위해 필요)
+            use_fast_extraction: PyPDF2 빠른 추출 사용 여부
 
         Returns:
             추출된 전체 텍스트
         """
+        # 1. 빠른 추출 시도 (PyPDF2)
+        if use_fast_extraction and file_path and PYPDF2_AVAILABLE:
+            success, text = self.extract_text_with_pypdf2(file_path)
+            if success:
+                return text
+
+        # 2. Gemini를 사용한 고급 추출 (OCR, 이미지 PDF 지원)
+        print(f"🤖 Gemini AI로 고급 텍스트 추출 중...")
         model = genai.GenerativeModel(model_name)
 
         prompt = """

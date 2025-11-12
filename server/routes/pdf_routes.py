@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, File, UploadFile, Form
 from typing import Dict, Any, List, Optional
 
 from services.pdf_service import get_pdf_loader
+from services.vector_db_service import get_vector_db_service
 from config.settings import UPLOAD_DIR, MAX_FILE_SIZE
 
 
@@ -19,10 +20,48 @@ router = APIRouter(prefix="/api/pdf", tags=["PDF"])
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
+async def save_uploaded_file_streaming(upload_file: UploadFile, dest_path: str) -> int:
+    """
+    업로드된 파일을 스트리밍 방식으로 저장 (메모리 효율적)
+
+    Args:
+        upload_file: FastAPI UploadFile 객체
+        dest_path: 저장할 경로
+
+    Returns:
+        파일 크기 (바이트)
+
+    Raises:
+        HTTPException: 파일 크기가 MAX_FILE_SIZE를 초과하는 경우
+    """
+    file_size = 0
+    try:
+        with open(dest_path, "wb") as f:
+            while chunk := await upload_file.read(8192):  # 8KB 청크
+                file_size += len(chunk)
+                if file_size > MAX_FILE_SIZE:
+                    os.remove(dest_path)
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"파일 크기가 너무 큽니다. 최대 {MAX_FILE_SIZE // (1024*1024)}MB까지 업로드 가능합니다."
+                    )
+                f.write(chunk)
+        return file_size
+    except HTTPException:
+        raise
+    except Exception as e:
+        if os.path.exists(dest_path):
+            os.remove(dest_path)
+        raise HTTPException(
+            status_code=500,
+            detail=f"파일 저장 중 오류 발생: {str(e)}"
+        )
+
+
 @router.post("/upload")
 async def upload_pdf_file(file: UploadFile = File(...)):
     """
-    PDF 파일 업로드 및 Gemini API에 등록
+    PDF 파일 업로드 및 Gemini API에 등록 (최적화됨)
 
     Request:
     - file: PDF 파일 (multipart/form-data)
@@ -39,21 +78,12 @@ async def upload_pdf_file(file: UploadFile = File(...)):
             detail="PDF 파일만 업로드 가능합니다."
         )
 
-    # 파일 크기 확인
-    file_content = await file.read()
-    if len(file_content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"파일 크기가 너무 큽니다. 최대 {MAX_FILE_SIZE // (1024*1024)}MB까지 업로드 가능합니다."
-        )
-
     # 파일을 임시로 저장
     temp_file_path = os.path.join(UPLOAD_DIR, file.filename)
 
     try:
-        # 파일 저장
-        with open(temp_file_path, "wb") as f:
-            f.write(file_content)
+        # 파일 저장 (스트리밍 방식)
+        await save_uploaded_file_streaming(file, temp_file_path)
 
         # PDFLoader로 Gemini API에 업로드
         loader = get_pdf_loader()
@@ -65,10 +95,37 @@ async def upload_pdf_file(file: UploadFile = File(...)):
         # 파일 정보 반환
         file_info = loader.get_file_info(processed_file)
 
+        # 🆕 FAISS 벡터 DB 생성 (LangChain 활용)
+        vector_db_info = None
+        try:
+            vector_db_service = get_vector_db_service()
+
+            # PDF에서 전체 텍스트 추출 (하이브리드 방식)
+            full_text = loader.extract_full_text(processed_file, file_path=temp_file_path)
+
+            # 벡터 스토어 생성
+            vector_store = vector_db_service.create_vector_store_from_text(
+                text=full_text,
+                file_name=file.filename,
+                metadata={
+                    "gemini_file_uri": processed_file.uri,
+                    "display_name": file.filename
+                }
+            )
+
+            # 벡터 스토어 정보 조회
+            vector_db_info = vector_db_service.get_store_info(file.filename)
+
+            print(f"✅ FAISS 벡터 DB 생성 완료: {vector_db_info.get('total_chunks', 0)}개 청크")
+        except Exception as e:
+            print(f"⚠️ 벡터 DB 생성 실패 (무시): {str(e)}")
+            vector_db_info = {"status": "failed", "error": str(e)}
+
         return {
             "success": True,
             "file_info": file_info,
-            "message": "PDF 파일 업로드 및 처리 완료"
+            "vector_db_info": vector_db_info,
+            "message": "PDF 파일 업로드, 처리 및 FAISS 벡터 DB 생성 완료"
         }
 
     except Exception as e:
@@ -85,7 +142,7 @@ async def upload_pdf_file(file: UploadFile = File(...)):
 @router.post("/extract-text")
 async def extract_text_from_pdf(file: UploadFile = File(...)):
     """
-    PDF 파일에서 전체 텍스트 추출
+    PDF 파일에서 전체 텍스트 추출 (최적화됨)
 
     Request:
     - file: PDF 파일 (multipart/form-data)
@@ -102,21 +159,12 @@ async def extract_text_from_pdf(file: UploadFile = File(...)):
             detail="PDF 파일만 업로드 가능합니다."
         )
 
-    # 파일 크기 확인
-    file_content = await file.read()
-    if len(file_content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"파일 크기가 너무 큽니다. 최대 {MAX_FILE_SIZE // (1024*1024)}MB까지 업로드 가능합니다."
-        )
-
-    # 파일을 임시로 저장
+    # 파일을 임시로 저장 (스트리밍 방식)
     temp_file_path = os.path.join(UPLOAD_DIR, file.filename)
 
     try:
-        # 파일 저장
-        with open(temp_file_path, "wb") as f:
-            f.write(file_content)
+        # 파일 저장 (스트리밍 방식)
+        await save_uploaded_file_streaming(file, temp_file_path)
 
         # PDFLoader로 Gemini API에 업로드
         loader = get_pdf_loader()
@@ -125,8 +173,8 @@ async def extract_text_from_pdf(file: UploadFile = File(...)):
         # 파일 처리 대기
         processed_file = loader.wait_for_file_processing(uploaded_file)
 
-        # 텍스트 추출
-        extracted_text = loader.extract_full_text(processed_file)
+        # 텍스트 추출 (하이브리드 방식: PyPDF2 우선, 실패 시 Gemini)
+        extracted_text = loader.extract_full_text(processed_file, file_path=temp_file_path)
 
         # Gemini API에서 파일 삭제 (선택사항)
         # loader.delete_file(processed_file)
@@ -170,21 +218,12 @@ async def extract_preview_from_pdf(file: UploadFile = File(...)):
             detail="PDF 파일만 업로드 가능합니다."
         )
 
-    # 파일 크기 확인
-    file_content = await file.read()
-    if len(file_content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"파일 크기가 너무 큽니다. 최대 {MAX_FILE_SIZE // (1024*1024)}MB까지 업로드 가능합니다."
-        )
-
     # 파일을 임시로 저장
     temp_file_path = os.path.join(UPLOAD_DIR, file.filename)
 
     try:
-        # 파일 저장
-        with open(temp_file_path, "wb") as f:
-            f.write(file_content)
+        # 파일 저장 (스트리밍 방식)
+        await save_uploaded_file_streaming(file, temp_file_path)
 
         # PDFLoader로 Gemini API에 업로드
         loader = get_pdf_loader()
@@ -235,21 +274,12 @@ async def extract_structured_content(file: UploadFile = File(...)):
             detail="PDF 파일만 업로드 가능합니다."
         )
 
-    # 파일 크기 확인
-    file_content = await file.read()
-    if len(file_content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"파일 크기가 너무 큽니다. 최대 {MAX_FILE_SIZE // (1024*1024)}MB까지 업로드 가능합니다."
-        )
-
     # 파일을 임시로 저장
     temp_file_path = os.path.join(UPLOAD_DIR, file.filename)
 
     try:
-        # 파일 저장
-        with open(temp_file_path, "wb") as f:
-            f.write(file_content)
+        # 파일 저장 (스트리밍 방식)
+        await save_uploaded_file_streaming(file, temp_file_path)
 
         # PDFLoader로 Gemini API에 업로드
         loader = get_pdf_loader()
@@ -300,21 +330,12 @@ async def extract_text_by_pages(file: UploadFile = File(...)):
             detail="PDF 파일만 업로드 가능합니다."
         )
 
-    # 파일 크기 확인
-    file_content = await file.read()
-    if len(file_content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"파일 크기가 너무 큽니다. 최대 {MAX_FILE_SIZE // (1024*1024)}MB까지 업로드 가능합니다."
-        )
-
     # 파일을 임시로 저장
     temp_file_path = os.path.join(UPLOAD_DIR, file.filename)
 
     try:
-        # 파일 저장
-        with open(temp_file_path, "wb") as f:
-            f.write(file_content)
+        # 파일 저장 (스트리밍 방식)
+        await save_uploaded_file_streaming(file, temp_file_path)
 
         # PDFLoader로 Gemini API에 업로드
         loader = get_pdf_loader()
