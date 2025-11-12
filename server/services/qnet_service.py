@@ -41,7 +41,7 @@ async def make_qnet_request(base_url: str, endpoint: str, params: Dict[str, Any]
 
     for attempt in range(max_retries):
         try:
-            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
                 response = await client.get(url)
                 print(f"✅ Q-Net API Response (attempt {attempt + 1}): status={response.status_code}, length={len(response.text)}")
 
