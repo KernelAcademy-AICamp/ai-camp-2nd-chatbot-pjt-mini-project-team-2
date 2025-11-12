@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, File, UploadFile, Form
 from typing import Dict, Any, List, Optional
 
 from services.pdf_service import get_pdf_loader
+from services.vector_db_service import get_vector_db_service
 from config.settings import UPLOAD_DIR, MAX_FILE_SIZE
 
 
@@ -94,10 +95,37 @@ async def upload_pdf_file(file: UploadFile = File(...)):
         # 파일 정보 반환
         file_info = loader.get_file_info(processed_file)
 
+        # 🆕 FAISS 벡터 DB 생성 (LangChain 활용)
+        vector_db_info = None
+        try:
+            vector_db_service = get_vector_db_service()
+
+            # PDF에서 전체 텍스트 추출 (하이브리드 방식)
+            full_text = loader.extract_full_text(processed_file, file_path=temp_file_path)
+
+            # 벡터 스토어 생성
+            vector_store = vector_db_service.create_vector_store_from_text(
+                text=full_text,
+                file_name=file.filename,
+                metadata={
+                    "gemini_file_uri": processed_file.uri,
+                    "display_name": file.filename
+                }
+            )
+
+            # 벡터 스토어 정보 조회
+            vector_db_info = vector_db_service.get_store_info(file.filename)
+
+            print(f"✅ FAISS 벡터 DB 생성 완료: {vector_db_info.get('total_chunks', 0)}개 청크")
+        except Exception as e:
+            print(f"⚠️ 벡터 DB 생성 실패 (무시): {str(e)}")
+            vector_db_info = {"status": "failed", "error": str(e)}
+
         return {
             "success": True,
             "file_info": file_info,
-            "message": "PDF 파일 업로드 및 처리 완료"
+            "vector_db_info": vector_db_info,
+            "message": "PDF 파일 업로드, 처리 및 FAISS 벡터 DB 생성 완료"
         }
 
     except Exception as e:

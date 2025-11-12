@@ -113,7 +113,14 @@ class EmbeddingService:
             print(f"📤 파일 업로드 중: {file_path}")
             print(f"   코퍼스: {corpus_name}")
 
-            # 파일 업로드 (일반 업로드)
+            # 코퍼스 확인 및 생성
+            if corpus_name not in self.vector_stores:
+                print(f"⚠️ 코퍼스 {corpus_name}가 없어 생성합니다...")
+                self.create_corpus(corpus_name, corpus_name)
+
+            corpus = self.vector_stores[corpus_name]
+
+            # 1. 파일 업로드 (일반 업로드)
             uploaded_file = genai.upload_file(
                 path=file_path,
                 display_name=display_name
@@ -122,7 +129,7 @@ class EmbeddingService:
             print(f"✅ 업로드 완료: {uploaded_file.display_name}")
             print(f"   URI: {uploaded_file.uri}")
 
-            # 파일 처리 대기
+            # 2. 파일 처리 대기
             print("⏳ 파일 처리 대기 중...")
             start_time = time.time()
             timeout = 300  # 5분
@@ -139,19 +146,55 @@ class EmbeddingService:
 
             print(f"✅ 파일 처리 완료")
 
-            # 코퍼스에 문서 생성 (임베딩 자동 생성)
-            if corpus_name in self.vector_stores:
-                corpus = self.vector_stores[corpus_name]
+            # 3. PDF 텍스트 추출 (청킹을 위해)
+            from services.pdf_service import get_pdf_loader
+            pdf_loader = get_pdf_loader()
 
-                # 문서를 코퍼스에 추가
-                document = genai.create_document(
-                    corpus_name=corpus.name,
-                    display_name=display_name,
-                    # 파일을 문서의 일부로 추가
-                )
+            try:
+                # Gemini를 통한 텍스트 추출
+                full_text = pdf_loader.extract_full_text(file_path)
+            except Exception as e:
+                print(f"⚠️ 텍스트 추출 실패, 파일 직접 사용: {str(e)}")
+                full_text = None
 
-                print(f"✅ 코퍼스에 문서 추가 완료")
-                print(f"   문서: {document.name}")
+            # 4. 문서를 코퍼스에 추가
+            chunks_count = 0
+            if full_text and len(full_text) > 0:
+                # 텍스트를 청크로 분할 (2000자씩 - 더 큰 청크)
+                chunk_size = 2000
+                chunks = [full_text[i:i+chunk_size] for i in range(0, len(full_text), chunk_size)]
+
+                print(f"📝 텍스트 청킹: {len(chunks)}개 청크 생성")
+
+                # 단일 문서로 corpus에 추가 (청크는 Parts로)
+                try:
+                    # Parts 리스트 생성
+                    parts = [{"text": chunk} for chunk in chunks]
+
+                    document = genai.create_document(
+                        corpus_name=corpus.name,
+                        display_name=display_name,
+                        custom_metadata=[("source_file", display_name), ("chunks", str(len(chunks)))],
+                    )
+
+                    # Document를 업데이트하여 Parts 추가
+                    genai.update_document(
+                        name=document.name,
+                        document={
+                            "display_name": display_name,
+                            "parts": parts,
+                        }
+                    )
+
+                    print(f"✅ 코퍼스에 문서 추가 완료 ({len(chunks)}개 청크)")
+                    chunks_count = len(chunks)
+                except Exception as e:
+                    print(f"❌ Corpus 문서 추가 실패: {str(e)}")
+                    print(f"⚠️ Fallback: 파일 객체만 사용합니다")
+                    chunks_count = 0
+            else:
+                # 텍스트 추출 실패 시, 파일 URI만 사용
+                print(f"⚠️ 텍스트 청킹 없이 파일 객체만 사용")
 
             # 업로드된 파일 목록에 추가
             self.uploaded_files.append(uploaded_file)
@@ -163,6 +206,7 @@ class EmbeddingService:
                 "mime_type": uploaded_file.mime_type,
                 "state": uploaded_file.state.name,
                 "corpus": corpus_name,
+                "chunks": len(chunks) if full_text else 0,
                 "status": "ready_for_search"
             }
 
@@ -228,69 +272,96 @@ class EmbeddingService:
                 detail=f"Failed to search in corpus: {str(e)}"
             )
 
-    def generate_answer_with_retrieval(
+    def generate_answer_with_search(
         self,
         query: str,
         files: List[File],
+        conversation_history: List[Dict[str, str]] = None,
         model_name: str = "gemini-2.5-flash"
     ) -> Dict[str, Any]:
         """
-        FileSearchTool을 사용하여 RAG 기반 답변 생성
-        파일에서 관련 정보를 검색하고 답변을 생성합니다.
+        Google Search Grounding을 활용한 RAG 답변 생성
+        문서 내용이 부족할 경우 자동으로 웹 검색을 통해 보충합니다.
 
         Args:
             query: 사용자 질문
-            files: 검색할 파일 리스트
+            files: 참조할 파일 리스트
+            conversation_history: 대화 이력 (선택사항)
             model_name: 사용할 Gemini 모델
 
         Returns:
-            답변 및 검색 결과
+            답변 및 검색 사용 여부
         """
         try:
             print(f"💬 질문: {query}")
             print(f"📚 파일 수: {len(files)}개")
+            print(f"🔍 Google Search Grounding 활성화")
 
-            # FileSearchTool 활성화하여 모델 생성
+            # Google Search Grounding 활성화하여 모델 생성
             model = genai.GenerativeModel(
                 model_name=model_name,
-                tools=[genai.protos.Tool(
-                    google_search_retrieval=genai.protos.GoogleSearchRetrieval()
-                )]
+                tools="google_search_retrieval"
             )
 
-            # 프롬프트 구성
-            prompt = f"""다음 문서들을 참고하여 질문에 답변해주세요.
+            # 시스템 프롬프트
+            system_prompt = """당신은 업로드된 문서를 기반으로 답변하는 전문 AI 어시스턴트입니다.
 
-**질문:** {query}
+**역할:**
+- 먼저 업로드된 문서의 내용을 참고하여 답변합니다
+- 문서에 충분한 정보가 없거나 최신 정보가 필요한 경우, Google 검색을 활용하여 정보를 보충합니다
+- 문서와 검색 결과를 종합하여 정확하고 풍부한 답변을 제공합니다
+- 한국어로 친절하고 명확하게 답변합니다
 
 **답변 지침:**
-1. 업로드된 문서의 내용을 기반으로 정확하게 답변하세요
-2. 문서에서 관련된 부분을 찾아 인용하세요
-3. 답변에 확신이 없다면 솔직하게 말하세요
-4. 한국어로 친절하고 명확하게 답변하세요
+1. 업로드된 문서를 먼저 확인하여 관련 내용을 찾습니다
+2. 문서만으로 답변이 충분하면 문서 기반으로 답변합니다
+3. 문서에 내용이 부족하거나 추가 정보가 필요하면 Google 검색을 활용합니다
+4. 검색 결과를 활용한 경우, 답변 끝에 "[검색 결과 활용됨]"을 표시합니다
+5. 출처를 명확히 구분하여 제시합니다 (문서 내용 vs 검색 결과)
+"""
 
-**답변:**
+            # 대화 이력 포함
+            conversation_text = ""
+            if conversation_history:
+                conversation_text = "\n".join([
+                    f"{'사용자' if msg['role'] == 'user' else 'AI'}: {msg['content']}"
+                    for msg in conversation_history
+                ])
+
+            # 사용자 프롬프트
+            user_prompt = f"""**이전 대화:**
+{conversation_text if conversation_text else '(첫 대화입니다)'}
+
+**현재 질문:** {query}
+
+위 문서들과 대화 맥락을 참고하여 답변해주세요. 문서에 내용이 부족한 경우 Google 검색을 활용하세요.
 """
 
             # 파일과 함께 질문
-            response = model.generate_content([prompt] + files)
+            content = [system_prompt, user_prompt] + files
+            response = model.generate_content(content)
 
             answer = response.text
 
-            print(f"✅ 답변 생성 완료")
+            # 검색 사용 여부 확인
+            search_used = "[검색 결과 활용됨]" in answer
+
+            print(f"✅ 답변 생성 완료 (검색 활용: {'예' if search_used else '아니오'})")
 
             return {
                 "query": query,
                 "answer": answer,
                 "sources": [f.display_name for f in files],
-                "model": model_name
+                "model": model_name,
+                "search_used": search_used,
+                "method": "rag_with_search"
             }
 
         except Exception as e:
             print(f"❌ 답변 생성 실패: {str(e)}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to generate answer: {str(e)}"
+                detail=f"Failed to generate answer with search: {str(e)}"
             )
 
     def generate_answer_simple(
