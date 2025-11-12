@@ -5,16 +5,21 @@ Handles all Q-Net API requests
 
 import httpx
 import asyncio
-from typing import Dict, Any
+import time
+from typing import Dict, Any, Optional, Tuple
 from urllib.parse import urlencode
 from fastapi import HTTPException
 
 from config.settings import QNET_SERVICE_KEY
 
+# 서버 사이드 메모리 캐시
+_cache: Dict[str, Tuple[float, str]] = {}
+CACHE_TTL = 7 * 24 * 60 * 60  # 7일 (초 단위)
+
 
 async def make_qnet_request(base_url: str, endpoint: str, params: Dict[str, Any], max_retries: int = 3) -> tuple:
     """
-    Make HTTP request to Q-Net API with retry logic
+    Make HTTP request to Q-Net API with retry logic and server-side caching
 
     Args:
         base_url: Base URL of the Q-Net API
@@ -35,7 +40,21 @@ async def make_qnet_request(base_url: str, endpoint: str, params: Dict[str, Any]
     query_string = urlencode(query_params)
     url = f"{base_url}/{endpoint}?{query_string}"
 
-    print(f"🔗 Requesting Q-Net API: {url}")
+    # 캐시 키 생성 (URL 전체를 키로 사용)
+    cache_key = f"{endpoint}:{query_string}"
+
+    # 캐시 확인
+    if cache_key in _cache:
+        cached_time, cached_data = _cache[cache_key]
+        if time.time() - cached_time < CACHE_TTL:
+            print(f"✅ 서버 캐시에서 즉시 반환: {endpoint} (캐시 나이: {int((time.time() - cached_time) / 60)}분)")
+            return 200, cached_data
+        else:
+            # 만료된 캐시 삭제
+            del _cache[cache_key]
+            print(f"🗑️ 만료된 캐시 삭제: {cache_key}")
+
+    print(f"🔗 Q-Net API 요청 중: {url}")
 
     last_error = None
 
@@ -65,6 +84,10 @@ async def make_qnet_request(base_url: str, endpoint: str, params: Dict[str, Any]
                             continue
                         else:
                             raise HTTPException(status_code=503, detail=error_msg)
+
+                # 성공 시 캐시에 저장
+                _cache[cache_key] = (time.time(), response.text)
+                print(f"💾 서버 캐시에 저장: {cache_key}")
 
                 return response.status_code, response.text
 

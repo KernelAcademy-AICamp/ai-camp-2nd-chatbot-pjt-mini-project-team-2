@@ -433,18 +433,6 @@
   color: white;
 }
 
-.list-code {
-  font-size: 0.85rem;
-  color: #6c757d;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.list-item.selected .list-code {
-  color: rgba(255, 255, 255, 0.9);
-}
-
-
 .global-search-section {
   margin-bottom: 2rem;
 }
@@ -632,6 +620,28 @@
   margin: 0.5rem 0;
 }
 
+.background-loading-notice {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  border: 2px solid #667eea;
+  border-radius: 12px;
+  padding: 1rem 1.5rem;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  color: #667eea;
+  font-weight: 500;
+  font-size: 0.95rem;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
 .info-sub {
   font-size: 0.9rem;
   color: #95a5a6;
@@ -740,20 +750,6 @@
   font-size: 1.1rem;
   text-align: center;
   width: 100%;
-}
-
-.date-input {
-  padding: 0.75rem;
-  border: 2px solid #e9ecef;
-  border-radius: 4px;
-  font-size: 1rem;
-  transition: border-color 0.3s;
-  max-width: 300px;
-}
-
-.date-input:focus {
-  outline: none;
-  border-color: #667eea;
 }
 
 .date-info {

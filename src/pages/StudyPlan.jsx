@@ -541,6 +541,13 @@ function StudyPlan() {
               <div className="selection-section">
                 <h2>종목 선택</h2>
 
+                {/* 백그라운드 로딩 상태 표시 */}
+                {selectedSubject && loadingSchedules && (
+                  <div className="background-loading-notice">
+                    ⏳ 시험일정을 백그라운드에서 불러오는 중... (다음 단계로 진행하셔도 됩니다)
+                  </div>
+                )}
+
                 {loadingQualifications ? (
                   <div className="loading-message">
                     <p>종목 목록을 불러오는 중...</p>

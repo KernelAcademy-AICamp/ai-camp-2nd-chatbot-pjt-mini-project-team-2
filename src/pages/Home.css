@@ -249,18 +249,8 @@
   box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
 }
 
-.file-icon {
-  font-size: 2rem;
-}
-
 .file-info {
   flex: 1;
-}
-
-.file-name {
-  font-weight: 600;
-  color: #2c3e50;
-  margin: 0;
 }
 
 .file-meta {
