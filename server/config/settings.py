@@ -19,6 +19,9 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # Gemini Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+# Tavily Configuration
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+
 # Server Configuration
 SERVER_HOST = "0.0.0.0"
 SERVER_PORT = 3001
