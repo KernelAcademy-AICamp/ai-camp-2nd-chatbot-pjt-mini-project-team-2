@@ -3,6 +3,9 @@ import { getQualificationList } from '../services/qnetApi';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import DatePicker from 'react-datepicker';
+import { ko } from 'date-fns/locale';
+import 'react-datepicker/dist/react-datepicker.css';
 import './StudyPlan.css';
 
 function StudyPlan() {
@@ -27,7 +30,7 @@ function StudyPlan() {
   const [selectedSchedule, setSelectedSchedule] = useState(null);
 
   // 공부 시작 날짜
-  const [startDate, setStartDate] = useState('');
+  const [startDate, setStartDate] = useState(null);
 
   // 학습 계획 관련 state
   const [studyPlan, setStudyPlan] = useState(null);
@@ -56,6 +59,24 @@ function StudyPlan() {
   const loadQualifications = async () => {
     setLoadingQualifications(true);
     try {
+      // 캐시 확인 (7일간 유효)
+      const CACHE_KEY = 'qnet-qualifications';
+      const CACHE_DURATION = 7 * 24 * 60 * 60 * 1000; // 7일
+      const cached = localStorage.getItem(CACHE_KEY);
+
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        const isValid = Date.now() - timestamp < CACHE_DURATION;
+
+        if (isValid) {
+          console.log('✅ 종목 목록 캐시에서 로드');
+          setQualificationList(data);
+          setLoadingQualifications(false);
+          return;
+        }
+      }
+
+      console.log('🔄 종목 목록 API에서 로드 중...');
       const response = await getQualificationList();
 
       if (response.success) {
@@ -68,6 +89,12 @@ function StudyPlan() {
           const rawItems = response.data.response.body.item;
           items = Array.isArray(rawItems) ? rawItems : [rawItems];
         }
+
+        // 캐시 저장
+        localStorage.setItem(CACHE_KEY, JSON.stringify({
+          data: items,
+          timestamp: Date.now()
+        }));
 
         setQualificationList(items);
       } else {
@@ -86,17 +113,38 @@ function StudyPlan() {
   const loadExamSchedules = async () => {
     if (!selectedSubject) return;
 
-    console.log('🔍 Loading exam schedules for:', selectedSubject.name, selectedSubject.code);
+    const currentYear = new Date().getFullYear();
+    const CACHE_KEY = `qnet-schedule-${selectedSubject.code}-${currentYear}`;
+    const CACHE_DURATION = 7 * 24 * 60 * 60 * 1000; // 7일로 연장
 
+    // 캐시 확인 먼저 (로딩 상태 설정 전에)
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        const isValid = Date.now() - timestamp < CACHE_DURATION;
+
+        if (isValid && data.length > 0) {
+          console.log('✅ 시험 일정 캐시에서 즉시 로드');
+          setExamSchedules(data);
+          setSelectedSchedule(data[0]);
+          setError(null);
+          return; // 캐시가 있으면 여기서 바로 종료
+        }
+      }
+    } catch (cacheErr) {
+      console.warn('캐시 읽기 실패:', cacheErr);
+    }
+
+    // 캐시가 없거나 만료된 경우에만 API 호출
+    console.log('🔄 시험 일정 API에서 로드 중...');
     setLoadingSchedules(true);
     setExamSchedules([]);
     setSelectedSchedule(null);
     setError(null);
 
     try {
-      const currentYear = new Date().getFullYear();
       const url = `http://localhost:3001/api/qnet/jm-list?jmCd=${selectedSubject.code}&implYy=${currentYear}`;
-      console.log('📡 Fetching:', url);
 
       const response = await fetch(url);
       if (!response.ok) {
@@ -116,12 +164,11 @@ function StudyPlan() {
       }
 
       const items = xmlDoc.getElementsByTagName('item');
-      console.log('📊 Found items:', items.length);
-
       const schedules = [];
+
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
-        const schedule = {
+        schedules.push({
           description: getXMLValue(item, 'description') || getXMLValue(item, 'implplannm') || `${i + 1}회차`,
           docRegStartDt: getXMLValue(item, 'docRegStartDt') || getXMLValue(item, 'docregstartdt'),
           docRegEndDt: getXMLValue(item, 'docRegEndDt') || getXMLValue(item, 'docregenddt'),
@@ -132,18 +179,21 @@ function StudyPlan() {
           pracExamStartDt: getXMLValue(item, 'pracExamStartDt') || getXMLValue(item, 'pracexamstartdt'),
           pracExamEndDt: getXMLValue(item, 'pracExamEndDt') || getXMLValue(item, 'pracexamenddt'),
           pracPassDt: getXMLValue(item, 'pracPassDt') || getXMLValue(item, 'pracpassdt') || getXMLValue(item, 'pracpassstartdt'),
-        };
-
-        schedules.push(schedule);
+        });
       }
 
-      console.log('✅ Schedules loaded:', schedules.length);
+      // 캐시 저장
+      localStorage.setItem(CACHE_KEY, JSON.stringify({
+        data: schedules,
+        timestamp: Date.now()
+      }));
+
+      console.log('✅ API에서 로드 완료:', schedules.length, '개');
       setExamSchedules(schedules);
 
       // 첫 번째 일정 자동 선택
       if (schedules.length > 0) {
         setSelectedSchedule(schedules[0]);
-        console.log('✅ Auto-selected first schedule');
       }
 
     } catch (err) {
@@ -167,6 +217,74 @@ function StudyPlan() {
     const month = dateStr.substring(4, 6);
     const day = dateStr.substring(6, 8);
     return `${year}년 ${month}월 ${day}일`;
+  };
+
+  // 직무분야별 아이콘 매핑 함수
+  const getFieldIcon = (fieldName) => {
+    const name = fieldName.toLowerCase();
+
+    // 정보통신/IT
+    if (name.includes('정보') || name.includes('통신') || name.includes('전산') || name.includes('컴퓨터')) {
+      return '💻';
+    }
+    // 기계/제조
+    if (name.includes('기계') || name.includes('제조') || name.includes('생산')) {
+      return '⚙️';
+    }
+    // 전기/전자
+    if (name.includes('전기') || name.includes('전자')) {
+      return '⚡';
+    }
+    // 건설/건축/토목
+    if (name.includes('건설') || name.includes('건축') || name.includes('토목')) {
+      return '🏗️';
+    }
+    // 화학/환경/에너지
+    if (name.includes('화학') || name.includes('환경') || name.includes('에너지')) {
+      return '🧪';
+    }
+    // 안전관리
+    if (name.includes('안전') || name.includes('소방')) {
+      return '🛡️';
+    }
+    // 경영/사무/관리
+    if (name.includes('경영') || name.includes('사무') || name.includes('관리') || name.includes('회계')) {
+      return '📊';
+    }
+    // 디자인/예술
+    if (name.includes('디자인') || name.includes('예술') || name.includes('미술')) {
+      return '🎨';
+    }
+    // 농림/수산
+    if (name.includes('농') || name.includes('임업') || name.includes('수산')) {
+      return '🌾';
+    }
+    // 의료/보건
+    if (name.includes('의료') || name.includes('보건') || name.includes('간호')) {
+      return '🏥';
+    }
+    // 식품/조리
+    if (name.includes('식품') || name.includes('조리')) {
+      return '🍳';
+    }
+    // 서비스/관광
+    if (name.includes('서비스') || name.includes('관광') || name.includes('호텔')) {
+      return '🏨';
+    }
+    // 운송/물류
+    if (name.includes('운송') || name.includes('물류') || name.includes('교통')) {
+      return '🚛';
+    }
+    // 섬유/의류
+    if (name.includes('섬유') || name.includes('의류') || name.includes('패션')) {
+      return '👔';
+    }
+    // 금속/재료
+    if (name.includes('금속') || name.includes('재료')) {
+      return '🔩';
+    }
+    // 기타
+    return '📁';
   };
 
   // 대직무분야 목록 추출
@@ -238,7 +356,7 @@ function StudyPlan() {
     });
     setSearchTerm(jmNm);
     setSelectedSchedule(null);
-    setStartDate('');
+    setStartDate(null);
     setStudyPlan(null);
     setError(null);
 
@@ -268,6 +386,9 @@ function StudyPlan() {
     setStudyPlan(null);
 
     try {
+      // 날짜를 YYYY-MM-DD 형식으로 변환
+      const formattedDate = startDate.toISOString().split('T')[0];
+
       // OpenAI API 호출
       const response = await fetch('http://localhost:3001/api/openai/generate-study-plan', {
         method: 'POST',
@@ -277,7 +398,7 @@ function StudyPlan() {
         body: JSON.stringify({
           subject: selectedSubject.name,
           exam_schedule: selectedSchedule,
-          start_date: startDate
+          start_date: formattedDate
         })
       });
 
@@ -305,7 +426,7 @@ function StudyPlan() {
     setSearchTerm('');
     setExamSchedules([]);
     setSelectedSchedule(null);
-    setStartDate('');
+    setStartDate(null);
     setStudyPlan(null);
     setError(null);
     setActiveTab(1); // 1단계 탭으로 돌아가기
@@ -315,11 +436,6 @@ function StudyPlan() {
   const handleScheduleSelect = (schedule) => {
     setSelectedSchedule(schedule);
     setActiveTab(3); // 3단계 탭으로 이동
-  };
-
-  // 날짜 선택 핸들러
-  const handleDateSelect = (date) => {
-    setStartDate(date);
   };
 
   return (
@@ -397,7 +513,7 @@ function StudyPlan() {
                 {startDate && (
                   <div className="summary-item">
                     <span className="summary-label">공부 시작 날짜:</span>
-                    <span className="summary-value">{new Date(startDate).toLocaleDateString('ko-KR', {
+                    <span className="summary-value">{startDate.toLocaleDateString('ko-KR', {
                       year: 'numeric',
                       month: 'long',
                       day: 'numeric',
@@ -431,8 +547,8 @@ function StudyPlan() {
                   </div>
                 ) : (
             <>
-              {/* 전역 검색 박스 - 아무것도 선택하지 않았을 때만 표시 */}
-              {!selectedSubject && !selectedObligFld && !selectedMdObligFld && (
+              {/* 전역 검색 박스 - activeTab이 1이면 항상 표시 */}
+              {activeTab === 1 && !selectedObligFld && !selectedMdObligFld && (
                 <div className="global-search-section">
                   <div className="search-box">
                     <input
@@ -482,7 +598,7 @@ function StudyPlan() {
               )}
 
               {/* 카테고리 기반 선택: 3단계 목록 뷰 */}
-              {!searchTerm.trim() && (
+              {activeTab === 1 && !searchTerm.trim() && (
                 <div className="list-selection-container">
                   {/* 1단계: 대직무분야 목록 */}
                   <div className="list-panel">
@@ -499,7 +615,7 @@ function StudyPlan() {
                             setSearchTerm('');
                           }}
                         >
-                          <span className="list-icon">📁</span>
+                          <span className="list-icon">{getFieldIcon(item.name)}</span>
                           <span className="list-name">{item.name}</span>
                           <span className="list-arrow">›</span>
                         </div>
@@ -645,18 +761,76 @@ function StudyPlan() {
                 <h2>공부 시작 날짜 선택</h2>
 
                 <div className="date-picker-section">
-                  <label htmlFor="start-date">공부를 시작할 날짜를 선택하세요:</label>
-                  <input
-                    id="start-date"
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => handleDateSelect(e.target.value)}
-                className="date-input"
-              />
+                  <DatePicker
+                    selected={startDate}
+                    onChange={(date) => setStartDate(date)}
+                    dateFormat="yyyy년 MM월 dd일"
+                    placeholderText="날짜를 선택하세요"
+                    className="custom-date-picker"
+                    calendarClassName="custom-calendar"
+                    inline
+                    showMonthYearPicker={false}
+                    locale={ko}
+                    formatWeekDay={(day) => day.substring(0, 1)}
+                    renderCustomHeader={({
+                      date,
+                      changeYear,
+                      changeMonth,
+                      decreaseMonth,
+                      increaseMonth,
+                      prevMonthButtonDisabled,
+                      nextMonthButtonDisabled,
+                    }) => (
+                      <div className="custom-header">
+                        <div className="month-year-selector">
+                          <select
+                            value={date.getFullYear()}
+                            onChange={({ target: { value } }) => changeYear(value)}
+                            className="year-select"
+                          >
+                            {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - 5 + i).map((year) => (
+                              <option key={year} value={year}>
+                                {year}년
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={date.getMonth()}
+                            onChange={({ target: { value } }) => changeMonth(value)}
+                            className="month-select"
+                          >
+                            {Array.from({ length: 12 }, (_, i) => i).map((month) => (
+                              <option key={month} value={month}>
+                                {month + 1}월
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="navigation-buttons">
+                          <button
+                            onClick={decreaseMonth}
+                            disabled={prevMonthButtonDisabled}
+                            className="nav-button prev"
+                            type="button"
+                          >
+                            ‹
+                          </button>
+                          <button
+                            onClick={increaseMonth}
+                            disabled={nextMonthButtonDisabled}
+                            className="nav-button next"
+                            type="button"
+                          >
+                            ›
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  />
               {startDate && (
                 <>
                   <p className="date-info">
-                    선택된 날짜: <strong>{new Date(startDate).toLocaleDateString('ko-KR', {
+                    선택된 날짜: <strong>{startDate.toLocaleDateString('ko-KR', {
                       year: 'numeric',
                       month: 'long',
                       day: 'numeric',
